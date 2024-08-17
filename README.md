@@ -18,31 +18,14 @@
   CONCATENATE 'Z' ls_xsltattr-xsltdesc INTO ls_xsltattr-xsltdesc.
 Причина этого изменения в том, что вам разрешено создавать преобразования только в пространстве имен Z или customer, а не в пространстве имен XSLT.
 2. Найдите функциональный модуль XSLT_MAINTENANCE для удаления сгенерированного преобразования и вставьте входной параметр i_gen_flag со значением abap_true
-* Delete the transformation since it is
-* Delete the transformation since it is not needed any more.
-  CALL FUNCTION 'XSLT_MAINTENANCE'
-    EXPORTING
-      i_operation               = 'DELETE'                  "#EC NOTEXT
-      i_xslt_attributes         = ls_xsltattr
-      i_gen_flag                = abap_true
-      i_suppress_corr_insert    = abap_true
-      i_suppress_tree_placement = abap_true
-    EXCEPTIONS
-      OTHERS                    = 1.
+![image](https://github.com/user-attachments/assets/fd7f0e19-9e2a-4c7d-a817-4c1d9181cc3c)
+
   Причина этого изменения заключается в том, чтобы избежать всплывающего окна во время выполнения (например, если оно используется в WebUI).
   ZCL_DOCX готов к использованию. Теперь следует подготовить шаблон Word документа.
   1. Следует подготовить пользовательский XML-файл.
   Например:
-     <?xml version="1.0" encoding="utf-8"?>
-<data xmlns="http://www.sap.com/SAPForm/0.5">
-	<TABLE>
-		<DATA>
-			<NAME>%NAME%</NAME>
-			<LAST_NAME>%LAST_NAME%</LAST_NAME>
-			<DATE>%DATE%</DATE>   
-		</DATA>
-	</TABLE>
-</data>
+![image](https://github.com/user-attachments/assets/bee349e2-a15c-4755-bf75-51ff342c1667)
+
 Убедитесь, что пространство имен тега data точно соответствует ""http://www.sap.com/SAPForm/0.5"". Эта проверка используется в упомянутом методе merge_data. Наша таблица представлена таблицей узлов, и каждая строка в этой таблице представлена тегом <DATA>...</DATA>. Теги внутри раздела <DATA> - это просто столбцы в таблицах.
 Создайте новый файл docx под названием Table.docx.  Вставьте в документ простую таблицу с названием строки заголовка, фамилией и датой рождения и одной пустой строкой. Теперь отметьте эту пустую строку и нажмите кнопку, повторяющую управление содержимым раздела. Ваш документ Word должен выглядеть следующим образом:
 ![358841134-d2f31aa1-fd0b-4aab-b494-14c106167da3](https://github.com/user-attachments/assets/138c4713-a6c1-4a1b-b97a-68190a55553e)
