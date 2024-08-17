@@ -1,0 +1,373 @@
+*&---------------------------------------------------------------------*
+*& Report  ZHR_TYARASOV_ZCLDOCX_TEST
+*&
+*&---------------------------------------------------------------------*
+*& Демонстрационная программа, выполняющая заполнение шаблона DOCX документа
+*& данными из R/3 через класс ZCL_DOCX_FORM
+*&---------------------------------------------------------------------*
+*&  Created by TYARASOV_AA
+*&---------------------------------------------------------------------*
+REPORT zhr_tyarasov_zcldocx_test.
+
+TYPES: BEGIN OF gty_table,
+         sreds    TYPE string,
+         quantity TYPE string,
+         units    TYPE string,
+       END OF gty_table.
+
+DATA: gt_table TYPE TABLE OF gty_table, " Тестовая таблица
+      gs_table TYPE gty_table. " Структура для тестовой таблицы
+
+DATA:
+  go_docx_form    TYPE REF TO zcl_docx_form,
+  w_val           TYPE zhr_docx_value,
+  it_val          TYPE TABLE OF zhr_docx_value, " Настроечная таблица для класса ZCL_DOCX_FORM
+  gv_nametemplate TYPE string.
+
+DATA: pt_header TYPE pru_labcont. " Структура, использующаяся для трудового договора
+DATA: gv_pathdw  TYPE string. " Путь выгрузки файла
+
+DATA: gv_datdog       TYPE dats, " Дата договора
+      gv_num          TYPE i, " Номер строки, используется для внесения табличных данных
+      " Используются для пользовательской даты
+      gv_datuser1(30) TYPE c,
+      gv_datuser2(30) TYPE c,
+      gv_year(4)      TYPE c,
+      gv_day(2)       TYPE c,
+      gv_month        TYPE p2050-monat,
+      gv_monthname    TYPE t7ru9a-regno,
+      " Текстовки для шаблона
+      gv_typlan       TYPE string,
+      gv_instr        TYPE string,
+      gv_two          TYPE string,
+      gv_text         TYPE string,
+      gv_beg          TYPE dats,
+      gv_end          TYPE dats,
+      gv_text1(1200)  TYPE c,
+      gv_text2        TYPE string,
+      gv_text3(1200)  TYPE c,
+      gv_text4(1200)  TYPE c,
+      gv_textitog     TYPE string.
+
+" Вспомогательные переменные
+DATA: gv_tmp  TYPE i,
+      gv_tmp1 TYPE string,
+      gv_tmp2 TYPE string,
+      gv_tmp3 TYPE string,
+      gv_tmp4 TYPE string,
+      gv_tmp5 TYPE string,
+      gv_tmp6 TYPE string,
+      gv_tmp7 TYPE string.
+
+CONSTANTS: gc_splitter TYPE c LENGTH 120 VALUE '<w:br/>'. " Используется для перехода на новую строку в документе DOCX
+
+PARAMETERS: _pathdow TYPE p33_download_file DEFAULT ' ' OBLIGATORY.
+PARAMETER: gv_var1 TYPE c RADIOBUTTON GROUP rad1,
+           gv_var2 TYPE c RADIOBUTTON GROUP rad1.
+
+*&---------------------------------------------------------------------*
+*  1. Проверка введенных данных на экране выбора.
+*&---------------------------------------------------------------------*
+
+AT SELECTION-SCREEN.
+
+  gv_pathdw = _pathdow.
+  IF cl_gui_frontend_services=>directory_exist( gv_pathdw ) = ''.
+    MESSAGE text-001 TYPE 'E'.
+  ENDIF.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR _pathdow.
+
+  gv_pathdw = _pathdow.
+  CALL METHOD cl_gui_frontend_services=>directory_browse
+    EXPORTING
+      initial_folder       = gv_pathdw
+    CHANGING
+      selected_folder      = gv_pathdw
+    EXCEPTIONS
+      cntl_error           = 1
+      error_no_gui         = 2
+      not_supported_by_gui = 3
+      OTHERS               = 4.
+
+  CLEAR gv_tmp.
+  CASE sy-subrc.
+    WHEN 0.
+      " Проверка выбранной пользователем директории, если она выбрана и не поставлен \, то поставить
+      IF sy-subrc = 0.
+        gv_tmp = strlen( gv_pathdw ) - 1.
+        IF gv_tmp > 0.
+          IF gv_pathdw+gv_tmp  <> '\'.
+            CONCATENATE gv_pathdw '\' INTO gv_pathdw.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+      _pathdow = gv_pathdw.
+    WHEN 1.
+      MESSAGE text-002 TYPE 'E'.
+    WHEN 2.
+      MESSAGE text-003 TYPE 'E'.
+    WHEN 3.
+      MESSAGE text-004 TYPE 'E'.
+    WHEN 4.
+      MESSAGE text-005  TYPE 'E'.
+  ENDCASE.
+
+START-OF-SELECTION.
+*&---------------------------------------------------------------------*
+*2. Подготовка данных для шаблона
+*&---------------------------------------------------------------------*
+
+" Табличные данные
+  IF gv_var1 = 'X'.
+    gs_table-sreds = 'средства комбинированного действия (ежемесячно)'.
+    gs_table-quantity = '100'.
+    gs_table-units = 'мл.'.
+    APPEND gs_table TO gt_table.
+
+    gs_table-sreds = 'твердое туалетное мыло (ежемесячно)'.
+    gs_table-quantity = '200'.
+    gs_table-units = 'г.'.
+    APPEND gs_table TO gt_table.
+
+    gs_table-sreds = 'средства комбинированного действия (ежемесячно)'.
+    gs_table-quantity = '100'.
+    gs_table-units = 'мл.'.
+    APPEND gs_table TO gt_table.
+
+    gs_table-sreds = 'твердое туалетное мыло (ежемесячно)'.
+    gs_table-quantity = '20'.
+    gs_table-units = 'г.'.
+    APPEND gs_table TO gt_table.
+  ENDIF.
+
+  IF gv_var2 = 'X'.
+    gs_table-sreds = 'твердое туалетное мыло (ежемесячно)'.
+    gs_table-quantity = '300'.
+    gs_table-units = 'г.'.
+    APPEND gs_table TO gt_table.
+
+    gs_table-sreds = 'очищающие кремы, гели, пасты (ежемесячно)'.
+    gs_table-quantity = '100'.
+    gs_table-units = 'мл.'.
+    APPEND gs_table TO gt_table.
+
+    gs_table-sreds = 'средства гидрофобного действия (ежемесячно)'.
+    gs_table-quantity = '100'.
+    gs_table-units = 'мл.'.
+    APPEND gs_table TO gt_table.
+
+    gs_table-sreds = 'средства для защиты кожи при негативном влиянии окружающей среды (зимние месяцы)'.
+    gs_table-quantity = '100'.
+    gs_table-units = 'мл.'.
+    APPEND gs_table TO gt_table.
+
+    gs_table-sreds = 'средства защиты от биологических вредных факторов (укусов насекомых) (ежемесячно)'.
+    gs_table-quantity = '100'.
+    gs_table-units = 'мл.'.
+    APPEND gs_table TO gt_table.
+
+    gs_table-sreds = 'средства защиты от бактериологических вредных факторов (дезинфекция) (ежемесячно)'.
+    gs_table-quantity = '100'.
+    gs_table-units = 'мл.'.
+    APPEND gs_table TO gt_table.
+  ENDIF.
+
+  " Начало договора
+  pt_header-s1d-h04_knaam = 'АО "Архангельский ЦБК"'.
+  pt_header-s1d-h02_city = 'г. Новодвинск'.
+  pt_header-s1d-h03_begda = sy-datum.
+  gv_day = pt_header-s1d-h03_begda+6(2).
+  gv_month = pt_header-s1d-h03_begda+4(2).
+  gv_year = pt_header-s1d-h03_begda(4).
+
+  CALL FUNCTION 'HR_RU_MONTH_NAME_IN_GENITIVE' " Название месяца в родительном падеже
+    EXPORTING
+      month = gv_month
+    IMPORTING
+      name  = gv_monthname.
+
+  gv_datuser1 = | "{ gv_day }" { gv_monthname } { gv_year } г. |.
+  gv_datdog = sy-datum.
+  gv_datuser2 = |{ gv_datdog DATE = USER }|.
+
+  IF gv_var1 IS INITIAL.
+    pt_header-zz_oldcontnum = '777'.
+    gv_text = |заключили настоящий трудовой договор о нижеследующем:|.
+  ELSE.
+    pt_header-zz_oldcontnum = '777'.
+    gv_text = |договорились о внесении изменений в трудовой договор № { pt_header-zz_oldcontnum } от { gv_datuser2 }, изложив его в следующей редакции:|.
+  ENDIF.
+
+  pt_header-s1d-d01_lnaam = 'АО "Архангельский "ЦБК"'.
+  pt_header-zzobr_dol = 'начальника отдела кадров'.
+  pt_header-zzobr_nam = 'Зубарева В.В.'.
+  pt_header-zzosnovanie = 'доверенности 8-Б'.
+  pt_header-s1d-h05_cname = 'Иванов Иван Иванович'.
+
+  " Пункты 1.1 и 1.2
+  IF gv_var1 = 'X'.
+    pt_header-zztypeprof = 'по профессии'.
+    pt_header-zz_plans = 'Техник'.
+    gv_typlan = 'профессии'.
+    gv_instr = 'рабочей'.
+    gv_two = 'рабочую'.
+  ENDIF.
+
+  IF gv_var2 = 'X'.
+    pt_header-zztypeprof = 'по должности'.
+    pt_header-zz_plans = 'Техник'.
+    gv_typlan = 'должности'.
+    gv_instr = 'должностной'.
+    gv_two = 'должностную'.
+  ENDIF.
+
+  pt_header-s1d-h04_knaam = 'АО "Архангельский ЦБК"'.
+  pt_header-s1d-d02_afdlg = 'бюро расчетных задач управления АСУП'.
+
+  " Пункты 1.3 - 1.5
+gv_tmp1 = |1.3. Трудовой договор заключается в соответствии с частью 1 статьи 59 Трудового кодекса РФ на время выполнения временных(до двух месяцев) работ  c { gv_beg } по { gv_end }  на время исполнения обязанностей Фамилия И.О., (переведенной(ого) за |.
+  gv_tmp2 = |отсутствующую(его) Фамилия И.О.) находящего(ой)ся в ежегодном оплачиваемом отпуске / в связи с временной нетрудоспособностью / освобожденной от основной работы в связи с беременностью / отпуске по беременности и родам / отпуске по уходу за |.
+  gv_tmp3 = |ребенком / на время выполнения сезонных работ в период навигации, за которым в соответствии с Трудовым кодексом, трудовым договором сохраняется место работы.|.
+  gv_tmp4 = |Настоящий трудовой договор прекращается с выходом на работу основного работника.|.
+
+
+CASE gv_var1.
+  WHEN 'X'.
+    pt_header-s1d-d13_cttxt = '01'.
+    pt_header-s1d-d06_prbzt = '01'.
+    pt_header-zzremar = '01'.
+ENDCASE.
+
+CASE gv_var2.
+  WHEN 'X'.
+    pt_header-s1d-d13_cttxt = '02'.
+    pt_header-s1d-d06_prbzt = ''.
+    pt_header-zzremar = '1'.
+ENDCASE.
+
+  " Выбор варианта договора (постоянный или временный)
+  IF pt_header-s1d-d13_cttxt = '01' OR pt_header-s1d-d13_cttxt = '04'.
+    " Договор на неопределенный срок
+    gv_tmp6 = |1.3. Трудовой договор заключается|.
+    gv_tmp7 = |на неопределенный срок.|.
+    " Выбор фразы о сроке испытания или материальной ответственности
+    " Если есть срок испытания и материальная ответственность
+    IF pt_header-s1d-d06_prbzt IS NOT INITIAL AND pt_header-zzremar IS NOT INITIAL.
+      CLEAR gv_textitog.
+      gv_tmp5 = '5.'.
+      gv_text3 = |           1.4.  Работнику устанавливается срок испытания с { pt_header-s1d-d07_ctbeg } года по { pt_header-zz_endisp } года.|.
+      gv_text4 = |           1.{ gv_tmp5 } На работника возлагается полная материальная ответственность за ущерб, причиненный работодателю, о чем с ним заключается договор о полной материальной ответственности.|.
+      gv_textitog = | { gv_text3 } { gc_splitter } { gv_text4 } { gc_splitter } |.
+      " Если есть только срок испытания
+    ELSEIF pt_header-s1d-d06_prbzt IS NOT INITIAL AND pt_header-zzremar IS INITIAL.
+      gv_text3 = |           1.4.  Работнику устанавливается срок испытания с { pt_header-s1d-d07_ctbeg } года по { pt_header-zz_endisp } года.|.
+      gv_textitog = | { gv_text3 } { gc_splitter } |.
+      " Если есть только материальная ответственность
+    ELSEIF pt_header-s1d-d06_prbzt IS INITIAL AND pt_header-zzremar IS NOT INITIAL.
+      gv_tmp5 = '4.'.
+      gv_text4 = |           1.{ gv_tmp5 } На работника возлагается полная материальная ответственность за ущерб, причиненный работодателю, о чем с ним заключается договор о полной материальной ответственности.|.
+      gv_textitog = | { gv_text4 } { gc_splitter } |.
+      " Если нет ни срока испытания ни материальной ответственности
+    ELSE.
+      gv_tmp6 = |1.3. Трудовой договор заключается|.
+      gv_tmp7 = |на неопределенный срок.|.
+    ENDIF.
+  ELSE.
+    " Временный договор
+    gv_tmp6 = |{ gv_tmp1 } { gv_tmp2 } { gv_tmp3 } { gv_tmp4 }|.
+    gv_tmp7 = ''.
+    " Выбор фразы о сроке испытания или материальной ответственности
+    " Если есть срок испытания и материальная ответственность
+    IF pt_header-s1d-d06_prbzt IS NOT INITIAL AND pt_header-zzremar IS NOT INITIAL.
+      gv_tmp5 = '5.'.
+      gv_text2 = |           1.4.  Работнику устанавливается срок испытания с { pt_header-s1d-d07_ctbeg } года по { pt_header-zz_endisp } года.|.
+      gv_text3 = |           1.{ gv_tmp5 } На работника возлагается полная материальная ответственность за ущерб, причиненный работодателю, о чем с ним заключается договор о полной материальной ответственности.|.
+      gv_textitog = | { gc_splitter } { gv_text2 } { gc_splitter } { gv_text3 } |.
+      " Если есть только срок испытания
+    ELSEIF pt_header-s1d-d06_prbzt IS NOT INITIAL AND pt_header-zzremar IS INITIAL.
+      gv_text2 = |           1.4.  Работнику устанавливается срок испытания с { pt_header-s1d-d07_ctbeg } года по { pt_header-zz_endisp } года.|.
+      gv_textitog = | { gv_text2 } { gc_splitter } |.
+      " Если есть только материальная ответственность
+    ELSEIF pt_header-s1d-d06_prbzt IS INITIAL AND pt_header-zzremar IS NOT INITIAL.
+      gv_tmp5 = '4.'.
+      gv_text2 = |           1.{ gv_tmp5 } На работника возлагается полная материальная ответственность за ущерб, причиненный работодателю, о чем с ним заключается договор о полной материальной ответственности.|.
+      gv_textitog = | { gv_text2 } { gc_splitter } |.
+      " Если нет ни срока испытания ни материальной ответственности
+    ENDIF.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*3. Заполнение шаблона данными и выгрузка его на сервер
+*&---------------------------------------------------------------------*
+
+  " Имя шаблона
+  gv_nametemplate = 'test_samp'.
+
+  " Макрос для заполнения настроечной таблицы
+  DEFINE setval.
+    Clear w_Val.
+    w_Val-NAME_TABLE  = &1.
+    w_Val-NUMBER_LINE   = &2.
+    w_Val-FIND_TEXT = &3.
+    w_Val-PLACE_DOC  = &4.
+    w_Val-ACTION  = &5.
+    w_Val-VALUE  = &6.
+    Append w_Val to it_Val.
+  END-OF-DEFINITION.
+
+  " Табличные данные
+  IF gt_table IS NOT INITIAL.
+    LOOP AT gt_table INTO gs_table.
+      setval 'TABLE' gv_num 'SREDS' 'T' '' gs_table-sreds. " Название средства
+      setval 'TABLE' gv_num 'QUANTITY' 'T' '' gs_table-quantity. " Количество
+      setval 'TABLE' gv_num 'UNITS' 'T' '' gs_table-units. " Единицы измерения
+      gv_num = gv_num + 1. " Номер строки
+    ENDLOOP.
+  ENDIF.
+
+  " Основная часть документа
+  setval '' '1' 'KNAAM' 'M' 'F' pt_header-s1d-h04_knaam. "
+  setval '' '1' 'CIT' 'M' 'F' pt_header-s1d-h02_city. "
+  setval '' '1' 'DATDOG' 'M' 'F' gv_datuser1. "
+  setval '' '1' 'NUM' 'M' 'F' pt_header-zz_oldcontnum.
+  setval '' '1' 'LVIDDOG' 'M' 'F' gv_text.
+  setval '' '1' 'LNAM' 'M' 'F' pt_header-s1d-d01_lnaam.
+  setval '' '1' 'OBR_DOL' 'M' 'F' pt_header-zzobr_dol.
+  setval '' '1' 'OBR_NAM' 'M' 'F' pt_header-zzobr_nam.
+  setval '' '1' 'OSNOVANIE' 'M' 'F' pt_header-zzosnovanie.
+  setval '' '1' 'CNAME'  'M' 'F' pt_header-s1d-h05_cname.
+  setval '' '1' 'TYPEPROF' 'M' 'F' pt_header-zztypeprof.
+  setval '' '1' 'PLAN' 'M' 'F' pt_header-zz_plans.
+  setval '' '1' 'RULS' 'M' 'F' gv_typlan.
+  setval '' '1' 'INSTR' 'M' 'F' gv_instr.
+  setval '' '1' 'TWO' 'M' 'F' gv_two.
+  setval '' '1' 'PLAN' 'M' 'F' pt_header-zz_plans.
+  setval '' '' 'KNAAM' 'M' 'A' pt_header-s1d-h04_knaam.
+  setval '' '1' 'AFDLG' 'M' 'F' pt_header-s1d-d02_afdlg.
+  setval '' '1' 'LVDOG' 'M' 'F' gv_tmp6.
+  setval '' '1' 'SR' 'M' 'F' gv_tmp7.
+  setval '' '1' 'LVFOOT' 'M' 'F' gv_textitog.
+
+  " Заполнение колонтитула
+  setval '' '1' 'KNAAM' 'H' 'F' pt_header-s1d-h04_knaam. "организация
+  gv_pathdw = _pathdow.
+
+
+  CREATE OBJECT go_docx_form.
+  " Вызов метода заполнения и выгрузки шаблона,
+  " В качестве параметров импорта передаются:
+  " 1. Настроечная таблица it_val с данными для заполнения шаблона
+  " 2. Директория выгрузки шаблона на сервер
+  " 3. Имя шаблона
+  TRY.
+      go_docx_form->openform( EXPORTING it_values = it_val
+                              iv_path_dowload = gv_pathdw
+                              iv_template_name =  gv_nametemplate ).
+    CATCH cx_openxml_not_found.
+      MESSAGE text-006 TYPE 'E'.
+    CATCH cx_openxml_format.
+      MESSAGE text-007 TYPE 'E'.
+  ENDTRY.
+
+END-OF-SELECTION.
