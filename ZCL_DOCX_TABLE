@@ -1,0 +1,191 @@
+class ZCL_DOCX_TABLE definition
+  public
+  inheriting from ZCL_DOCX_FORM
+  create public .
+
+public section.
+  methods CREATE_DATA_XML
+    redefinition .
+*public section.
+protected section.
+
+  methods REPLACEMENT
+    redefinition .
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_DOCX_TABLE IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_DOCX_TABLE->CREATE_DATA_XML
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_VALUES                      TYPE        TY_GT_DOCX_TABLE
+* | [<-()] RV_XMLDATA                     TYPE        XSTRING
+* | [!CX!] CX_OPENXML_NOT_FOUND
+* | [!CX!] CX_OPENXML_FORMAT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD create_data_xml.
+*CALL METHOD SUPER->CREATE_DATA_XML
+*    .
+
+    TYPES:
+      BEGIN OF lty_docx_table,
+        name_table(70)   TYPE c, " Название таблицы
+        number_line(100) TYPE n, " Номер столбца
+        find_text(50)    TYPE c, " Место в документе
+        value            TYPE string, " Значение
+      END OF lty_docx_table.
+
+    DATA: lv_table_string TYPE string, " Финальная таблица с данными для пользовательского XML
+          lv_new_line     TYPE string, " Новая строка таблицы пользовательского XML
+          lv_line         TYPE string, " Предыдущая строка пользовательского XML
+          lv_table_tmp1   TYPE string, " Строка таблицы
+          lv_table_tmp2   TYPE string, " Таблица для пользовательского XML
+          lv_custom       TYPE string, " Пользовательский XML в формате string
+          lv_name_table   TYPE string, " Название таблицы
+          lv_custom_xml   TYPE xstring, " Пользовательский XML
+          lv_number_line  TYPE i, " Номер строки
+          lv_count        TYPE i. " Счетчик
+
+    DATA: lt_docx_table TYPE TABLE OF lty_docx_table.
+    FIELD-SYMBOLS: <ls_table_imp> TYPE gty_docx_table.
+    FIELD-SYMBOLS: <ls_table_value> TYPE lty_docx_table.
+
+    LOOP AT it_values ASSIGNING <ls_table_imp>.
+      APPEND INITIAL LINE TO lt_docx_table ASSIGNING <ls_table_value>.
+      <ls_table_value>-name_table = <ls_table_imp>-name_table.
+      <ls_table_value>-number_line = <ls_table_imp>-number_line.
+      <ls_table_value>-find_text = <ls_table_imp>-find_text.
+      <ls_table_value>-value = <ls_table_imp>-value.
+    ENDLOOP.
+
+" Добавление последней строки для того, чтобы цикл проходил еще раз с пустой строкой в таблице, так как
+" для формирования строки таблицы используются данные предыдущего прохода цикла
+    APPEND INITIAL LINE TO lt_docx_table ASSIGNING <ls_table_value>.
+    <ls_table_value>-name_table = ''.
+    <ls_table_value>-number_line = ''.
+    <ls_table_value>-find_text = ''.
+    <ls_table_value>-value = ''.
+
+
+    LOOP AT lt_docx_table ASSIGNING <ls_table_value>.
+      lv_count = lv_count + 1.
+" Если это первая строка, то она пропускается
+      IF lv_count = 1.
+        lv_new_line = |<{ <ls_table_value>-find_text }> { <ls_table_value>-value } </{ <ls_table_value>-find_text }>|.
+" Если новая строка с названием таблицы равна предыдущей, то это данные, привязанные к одной таблице
+      ELSEIF <ls_table_value>-name_table = lv_name_table.
+" Если номер новой строки больще номера предыдущей, то это новая строка таблицы
+        IF <ls_table_value>-number_line > lv_number_line.
+          " Запись новой строки
+          lv_new_line = |<{ <ls_table_value>-find_text }> { <ls_table_value>-value } </{ <ls_table_value>-find_text }>|.
+          " Запись предыдущей строки
+          lv_table_tmp1 = |{ lv_table_tmp1 }<DATA>{ lv_line }</DATA>|.
+" Иначе это одна и таже строка
+        ELSE.
+          lv_new_line = |{ lv_new_line }<{ <ls_table_value>-find_text }> { <ls_table_value>-value } </{ <ls_table_value>-find_text }>|.
+        ENDIF.
+" Формирование новой таблицы в строке и новой строки для таблицы
+      ELSE.
+        lv_new_line = |<{ <ls_table_value>-find_text }> { <ls_table_value>-value } </{ <ls_table_value>-find_text }>|.
+        lv_table_tmp1 = |{ lv_table_tmp1 }<DATA>{ lv_line }</DATA>|.
+        lv_table_tmp2 = |{ lv_table_tmp2 }<{ lv_name_table }>{ lv_table_tmp1 }</{ lv_name_table }>|.
+" Очистить данные предыдущей строки с таблицей для формирования данных новой строки таблицы
+        CLEAR lv_table_tmp1.
+      ENDIF.
+" Данные преддыдущей записи в цикле
+      lv_line = lv_new_line.
+      lv_name_table = <ls_table_value>-name_table.
+      lv_number_line = <ls_table_value>-number_line.
+    ENDLOOP.
+
+" Финальная строка со всеми таблицами
+    lv_table_string = lv_table_tmp2.
+
+" Финальная строка для пользовательского XML
+    lv_custom = |<?xml version="1.0" encoding="utf-8" ?><data xmlns="http://www.sap.com/SAPForm/0.5">{ lv_table_string }</data>|.
+
+" Формирование пользовательского XML
+    CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+      EXPORTING
+        text   = lv_custom
+      IMPORTING
+        buffer = lv_custom_xml.
+
+    rv_xmldata = lv_custom_xml.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZCL_DOCX_TABLE->REPLACEMENT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DOCX                        TYPE        XSTRING
+* | [--->] IT_VALUES                      TYPE        TY_GT_DOCX_TABLE
+* | [<-()] RV_DOCX                        TYPE        XSTRING
+* | [!CX!] CX_OPENXML_FORMAT
+* | [!CX!] CX_OPENXML_NOT_FOUND
+* | [!CX!] CX_DOCX_TRANSFORMATION_ERR
+* | [!CX!] CX_MERGE_PARTS
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD replacement.
+*CALL METHOD SUPER->REPLACEMENT
+*  EXPORTING
+*    IV_DOCX   =
+*    IT_VALUES =
+*  RECEIVING
+*    RV_DOCX   =
+*    .
+
+    DATA: lt_docx_table TYPE TABLE OF gty_docx_table,
+          lv_xml        TYPE xstring, " Пользовательский XML
+          lv_docx       TYPE xstring, " Основной документ DOCX
+          lv_length     TYPE i. " Длинна строки.
+
+    FIELD-SYMBOLS: <ls_docx_table_imp> TYPE gty_docx_table,
+                   <ls_docx_table>     TYPE gty_docx_table.
+
+    LOOP AT it_values ASSIGNING <ls_docx_table_imp>.
+      APPEND INITIAL LINE TO lt_docx_table ASSIGNING <ls_docx_table>.
+      <ls_docx_table>-name_table = <ls_docx_table_imp>-name_table.
+      <ls_docx_table>-number_line = <ls_docx_table_imp>-number_line.
+      <ls_docx_table>-find_text = <ls_docx_table_imp>-find_text.
+      <ls_docx_table>-value = <ls_docx_table_imp>-value.
+    ENDLOOP.
+    SORT lt_docx_table BY name_table number_line.
+
+
+    lv_docx = iv_docx.
+    IF go_docx_document IS NOT BOUND.
+      TRY.
+          go_docx_document = cl_docx_document=>load_document( lv_docx ).
+        CATCH cx_openxml_format.
+          RAISE EXCEPTION TYPE cx_openxml_format.
+      ENDTRY.
+    ENDIF.
+
+    " Метод получения пользовательского XML
+    lv_xml = me->create_data_xml( it_values = lt_docx_table ).
+
+    IF lv_xml IS NOT INITIAL AND lv_docx IS NOT INITIAL.
+      " ОБЪЕДИНЕНИЕ ПОЛЬЗОВАТЕЛЬСКОГО XML ФАЙЛА И ОСНОВНОГО ДОКУМЕНТА DOCX
+      TRY.
+          CALL METHOD zcl_docx_form=>merge_data
+            EXPORTING
+              im_formtemplate_data = lv_docx
+              im_customxml_data    = lv_xml
+              im_delete_sdt_tags   = 'Y'
+            RECEIVING
+              re_merged_data       = lv_docx.
+        CATCH cx_root.
+      ENDTRY.
+
+      " Сохранение данных
+      lv_length  = xstrlen( lv_docx ).
+      rv_docx = lv_docx.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
