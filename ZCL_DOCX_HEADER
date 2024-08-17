@@ -1,0 +1,186 @@
+class ZCL_DOCX_HEADER definition
+  public
+  inheriting from ZCL_DOCX_FORM
+  create public .
+
+public section.
+  methods CREATE_DATA_XML
+    redefinition .
+protected section.
+
+  methods REPLACEMENT
+    redefinition .
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_DOCX_HEADER IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_DOCX_HEADER->CREATE_DATA_XML
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_VALUES                      TYPE        TY_GT_DOCX_TABLE
+* | [<-()] RV_XMLDATA                     TYPE        XSTRING
+* | [!CX!] CX_OPENXML_NOT_FOUND
+* | [!CX!] CX_OPENXML_FORMAT
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD create_data_xml.
+**TRY.
+*CALL METHOD SUPER->CREATE_DATA_XML
+*  EXPORTING
+*    IT_VALUES  =
+*  RECEIVING
+*    RV_XMLDATA =
+*    .
+** CATCH cx_openxml_not_found .
+** CATCH cx_openxml_format .
+**ENDTRY.
+
+    TYPES:
+      BEGIN OF lty_docx_table,
+        find_text(50)    TYPE c, " Название метки
+        number_line(100) TYPE n, " Номер метки, если она идет по порядку
+        action(10)       TYPE c, " Действие с меткой
+        value            TYPE string, " Значение
+      END OF lty_docx_table.
+
+    DATA: lo_docx   TYPE REF TO zcl_docx_form,
+          lv_xml    TYPE xstring,
+          lr_part   TYPE REF TO cl_openxml_parturi,
+          lv_string TYPE string.
+
+    DATA: lt_docx_table TYPE TABLE OF lty_docx_table.
+    FIELD-SYMBOLS: <ls_table_imp> TYPE gty_docx_table.
+    FIELD-SYMBOLS: <ls_table_value> TYPE lty_docx_table.
+
+    LOOP AT it_values ASSIGNING <ls_table_imp>.
+      APPEND INITIAL LINE TO lt_docx_table ASSIGNING <ls_table_value>.
+      <ls_table_value>-find_text = <ls_table_imp>-find_text.
+      <ls_table_value>-number_line = <ls_table_imp>-number_line.
+      <ls_table_value>-action = <ls_table_imp>-action.
+      <ls_table_value>-value = <ls_table_imp>-value.
+    ENDLOOP.
+
+    IF go_headerpart IS NOT BOUND.
+      lr_part = cl_openxml_parturi=>create_from_partname( gc_headerparturi ).
+      TRY.
+          go_headerpart = go_docx_document->get_part_by_uri( ir_parturi = lr_part ).
+        CATCH cx_openxml_not_found.
+          RAISE EXCEPTION TYPE cx_openxml_not_found.
+        CATCH cx_openxml_format.
+          RAISE EXCEPTION TYPE cx_openxml_format.
+      ENDTRY.
+    ENDIF.
+
+    lv_xml = go_headerpart->get_data( ).
+
+    IF lv_xml IS NOT INITIAL.
+      CALL FUNCTION 'CRM_IC_XML_XSTRING2STRING'
+        EXPORTING
+          inxstring = lv_xml
+        IMPORTING
+          outstring = lv_string.
+
+      LOOP AT lt_docx_table  ASSIGNING <ls_table_value>.
+        CASE <ls_table_value>-action.
+          WHEN 'F'.
+            REPLACE FIRST OCCURRENCE OF <ls_table_value>-find_text IN lv_string WITH <ls_table_value>-value.
+          WHEN 'A'.
+            REPLACE ALL OCCURRENCES OF <ls_table_value>-find_text IN lv_string WITH <ls_table_value>-value.
+          WHEN 'D'.
+            REPLACE ALL OCCURRENCES OF <ls_table_value>-find_text IN lv_string WITH ''.
+          WHEN OTHERS.
+        ENDCASE.
+      ENDLOOP.
+
+      CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+        EXPORTING
+          text   = lv_string
+        IMPORTING
+          buffer = lv_xml.
+    ENDIF.
+
+    rv_xmldata = lv_xml.
+
+
+
+
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Protected Method ZCL_DOCX_HEADER->REPLACEMENT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_DOCX                        TYPE        XSTRING
+* | [--->] IT_VALUES                      TYPE        TY_GT_DOCX_TABLE
+* | [<-()] RV_DOCX                        TYPE        XSTRING
+* | [!CX!] CX_OPENXML_FORMAT
+* | [!CX!] CX_OPENXML_NOT_FOUND
+* | [!CX!] CX_DOCX_TRANSFORMATION_ERR
+* | [!CX!] CX_MERGE_PARTS
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD replacement.
+**TRY.
+*CALL METHOD SUPER->REPLACEMENT
+*  EXPORTING
+*    IV_DOCX   =
+*    IT_VALUES =
+*  RECEIVING
+*    RV_DOCX   =
+*    .
+** CATCH cx_openxml_format .
+** CATCH cx_openxml_not_found .
+**ENDTRY.
+
+    DATA: lt_docx_main TYPE TABLE OF gty_docx_table,
+          lv_xml       TYPE xstring, " XML с данными основной части документа
+          lr_header    TYPE REF TO cl_docx_headerpart, " Класс для работы с колонтитулом
+          lr_part      TYPE REF TO cl_openxml_parturi, " Класс для получения URL XML
+          lv_part_head TYPE REF TO cl_openxml_part, " Экземпляр класса для работы с данными колонтитула
+          lv_docx      TYPE xstring. " ZIP DOCX со всеми XML
+
+    FIELD-SYMBOLS: <ls_docx_table_imp> TYPE gty_docx_table,
+                   <ls_docx_main>      TYPE gty_docx_table.
+
+    LOOP AT it_values ASSIGNING <ls_docx_table_imp>.
+      APPEND INITIAL LINE TO lt_docx_main ASSIGNING <ls_docx_main>.
+      <ls_docx_main>-find_text = <ls_docx_table_imp>-find_text.
+      <ls_docx_main>-number_line = <ls_docx_table_imp>-number_line.
+      <ls_docx_main>-action = <ls_docx_table_imp>-action.
+      <ls_docx_main>-value = <ls_docx_table_imp>-value.
+    ENDLOOP.
+    " Сортировка по названию метки и ее номеру для упорядочивания меток которые
+    " заменяются по порядку
+    SORT lt_docx_main BY find_text number_line.
+
+    lv_docx = iv_docx.
+
+    TRY.
+        go_docx_document = cl_docx_document=>load_document( lv_docx ).
+      CATCH cx_openxml_format.
+        RAISE EXCEPTION TYPE cx_openxml_format.
+    ENDTRY.
+
+    TRY.
+        lv_xml = me->create_data_xml( it_values = lt_docx_main ).
+      CATCH cx_openxml_format.
+        RAISE EXCEPTION TYPE cx_openxml_format.
+      CATCH cx_openxml_not_found.
+        RAISE EXCEPTION TYPE cx_openxml_not_found.
+    ENDTRY.
+
+    IF lv_xml IS NOT INITIAL.
+      go_headerpart->feed_data( iv_data = lv_xml ).
+    ENDIF.
+
+    TRY.
+        rv_docx  = go_docx_document->get_package_data( ).
+      CATCH cx_openxml_format.
+        RAISE EXCEPTION TYPE cx_openxml_not_found.
+    ENDTRY.
+
+  ENDMETHOD.
+ENDCLASS.
