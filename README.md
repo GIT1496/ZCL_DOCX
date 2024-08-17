@@ -33,8 +33,16 @@
 ![image](https://github.com/user-attachments/assets/883e5a6e-896f-4dab-b2f4-20436c80d94c)
 Если у Вас возникнут проблемы, то вы можете обратиться к этому блогу: https://community.sap.com/t5/application-development-blog-posts/openxml-in-word-processing-custom-xml-part-mapping-flat-data/ba-p/13331900.
 Для работы с таблицами используется класс ZCL_DOCX_TABLE.
-
-
+Для автоматизации заполнения каждой отдельной части шаблона  документа пользовательскими данными используются классы ZCL_DOCX_MAIN, ZCL_DOCX_HEADER и ZCL_DOCX_TABLE. Данные классы наследуются от базового класса ZCL_DOCX, который в свою очередь наследуется от стандартного класса CL_OPENXML_PACKAGE. Методом, через который начинается заполнение шаблона документа DOCX пользовательскими данными является метод OPENFORM. На вход в данный метод подается таблица типа ZHR_DOCX_VALUE_T.
+Описание типа таблицы из ABAP словаря представлено на скриншоте ниже:
+![image](https://github.com/user-attachments/assets/9b5c2072-9177-45c8-a1b6-7fabb88d6eb5)
+![image](https://github.com/user-attachments/assets/23aa8045-9a86-46ff-926d-71ef9cff3b33)
+Для передачи названия таблицы и значения, которое будет заменять метку в шаблоне документа DOCX создан домен и элемент данных ZSTRING.
+Описание домена и элемента данных из ABAP словаря представлено на скриншоте ниже:
+![image](https://github.com/user-attachments/assets/5a613c1a-03fd-43dc-9b8a-88850611484c)
+![image](https://github.com/user-attachments/assets/2293afbc-7abd-425e-9231-b6fb2ac5d63f)
+![image](https://github.com/user-attachments/assets/a7afe41b-466d-4b3c-9c8f-d6f2582cc456)
+Пример заполнения шаблона документа DOCX пользовательскими данными представлен в демонстрационной программе zhr_tyarasov_zcldocx_test, которая находится в данном репозитории.
 
 
 
