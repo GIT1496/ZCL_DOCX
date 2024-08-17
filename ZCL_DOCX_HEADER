@@ -104,10 +104,6 @@ CLASS ZCL_DOCX_HEADER IMPLEMENTATION.
 
     rv_xmldata = lv_xml.
 
-
-
-
-
   ENDMETHOD.
 
 
